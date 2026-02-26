@@ -44,9 +44,23 @@ const diff = sh('git diff --cached');
 /* Parse CLI flags */
 const argv = minimist(process.argv.slice(2), {
   string: ['m', 'model'],
-  alias: { m: 'model' }
+  boolean: ['dry-run', 'n', 'debug', 'd'],
+  alias: { 
+    m: 'model',
+    'dry-run': 'n',
+    'debug': 'd'
+  }
 });
 const model = argv.model || DEFAULT_MODEL;
+const dryRun = argv['dry-run'] || argv.n || false;
+const debug = argv.debug || argv.d || false;
+
+/* Debug mode - show all flags */
+if (debug) {
+  console.log(chalk.gray('\n🔧 Debug mode - CLI flags:'));
+  console.log(chalk.gray(JSON.stringify(argv, null, 2)));
+  console.log('');
+}
 
 /* Build prompt - with type detection */
 const prompt = `Analyze the following git diff and create a conventional commit message.
@@ -107,16 +121,29 @@ async function generateMessage() {
   console.log(chalk.green('\nSuggested commit message:'));
   console.log(`> ${suggested}\n`);
 
-  const { finalMsg } = await inquirer.prompt([
-    {
-      type: 'input',
-      name: 'finalMsg',
-      message: 'Edit commit message (leave empty to accept):',
-      default: suggested
-    }
-  ]);
+  let commitMsg = suggested;
 
-  const commitMsg = finalMsg.trim() || suggested;
+  // Only prompt for edit if NOT in dry-run mode
+  if (!dryRun) {
+    const { finalMsg } = await inquirer.prompt([
+      {
+        type: 'input',
+        name: 'finalMsg',
+        message: 'Edit commit message (leave empty to accept):',
+        default: suggested
+      }
+    ]);
+    commitMsg = finalMsg.trim() || suggested;
+  }
+
+  // Dry-run mode: just show what would be committed
+  if (dryRun) {
+    console.log(chalk.cyan('\n🔍 Dry-run mode - no commit was made\n'));
+    console.log(chalk.yellow('Would commit with message:'));
+    console.log(`> ${commitMsg}\n`);
+    console.log(chalk.gray('Use without --dry-run or -n to actually commit.'));
+    process.exit(0);
+  }
 
   // Commit
   try {
