@@ -9,6 +9,7 @@
   "author": "OpenClaw",
   "license": "MIT",
   "dependencies": {
+    "ai": "^6.0.101",
     "axios": "^1.7.2",
     "chalk": "^4.1.2",
     "inquirer": "^9.2.7",

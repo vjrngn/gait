@@ -12,8 +12,9 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 
 import { checkGit, hasStagedChanges, getDiff, getStagedFiles, commit } from './lib/git.js';
-import { loadConfig, saveConfig, CONFIG_FILE, DEFAULT_MODEL } from './lib/config.js';
-import { generateCommitMessage, listModels } from './lib/ollama.js';
+import { loadConfig, saveConfig, CONFIG_FILE, getModelString } from './lib/config.js';
+import { generateCommitMessage as generateOllama, listModels } from './lib/ollama.js';
+import { generateWithAIProvider } from './lib/ai.js';
 import { buildPrompt } from './lib/prompt.js';
 import { runOnboarding, needsOnboarding } from './lib/init.js';
 
@@ -25,16 +26,19 @@ ${chalk.cyan('gait')} - AI-powered Git commit messages
 ${chalk.yellow('Usage:')}
   gait                    Run with staged changes
   gait init               Initialize/setup
-  gait -m <model>         Specify Ollama model
-  gait -M <model>         Set default model
-  gait -n                 Dry-run (preview only)
-  gait -s                 Show staged files
-  gait -l                 List available models
-  gait -d                 Debug mode
-  gait -h, --help         Show this help
+  gait -m <model>        Specify model (provider/model format)
+  gait -M <model>        Set default model
+  gait -n                Dry-run (preview only)
+  gait -s                Show staged files
+  gait -l                List available models
+  gait -d                Debug mode
+  gait -h, --help        Show this help
 
 ${chalk.yellow('Config:')}
-  Model stored in: ~/.gait/gait.json
+  Config stored in: ~/.gait/gait.json
+  
+${chalk.yellow('Model Format:')}
+  Use provider/model format: openai/gpt-4o, anthropic/claude-sonnet-4.5, ollama/llama3
   `);
 }
 
@@ -97,7 +101,14 @@ ${chalk.yellow('Config:')}
 
   /* Set default model */
   if (setModel) {
-    config.model = setModel;
+    const [provider, model] = setModel.split('/');
+    if (!provider || !model) {
+      console.error(chalk.red('✖ Model must be in provider/model format (e.g., ollama/llama3)'));
+      process.exit(1);
+    }
+    config.activeProvider = provider;
+    if (!config.providers) config.providers = {};
+    config.providers[provider] = { model };
     saveConfig(config);
     console.log(chalk.green(`✅ Default model set to: ${setModel}`));
     console.log(chalk.gray(`   Saved to ${CONFIG_FILE}`));
@@ -115,14 +126,17 @@ ${chalk.yellow('Config:')}
     process.exit(0);
   }
 
-  /* Determine model to use */
-  const model = argv.model || config.model || DEFAULT_MODEL;
+  /* Determine provider and model */
+  const provider = config.activeProvider || 'ollama';
+  const providerConfig = config.providers?.[provider] || { model: 'llama3' };
+  const modelString = getModelString(config);
 
   /* Debug mode */
   if (debug) {
-    console.log(chalk.gray('\n🔧 Debug mode - CLI flags:'));
-    console.log(chalk.gray(JSON.stringify(argv, null, 2)));
-    console.log(chalk.gray(`   Using model: ${model}`));
+    console.log(chalk.gray('\n🔧 Debug mode:'));
+    console.log(chalk.gray(`   Provider: ${provider}`));
+    console.log(chalk.gray(`   Model: ${providerConfig.model}`));
+    console.log(chalk.gray(`   Full: ${modelString}`));
   }
 
   /* Show staged files if requested */
@@ -138,8 +152,20 @@ ${chalk.yellow('Config:')}
   const prompt = buildPrompt(diff);
   
   const spinner = ora('Generating commit message…').start();
-  const suggested = await generateCommitMessage(model, prompt);
-  spinner.succeed('Done');
+  
+  let suggested;
+  try {
+    if (provider === 'ollama') {
+      suggested = await generateOllama(providerConfig.model, prompt);
+    } else {
+      suggested = await generateWithAIProvider(provider, providerConfig.model, prompt);
+    }
+    spinner.succeed('Done');
+  } catch (e) {
+    spinner.fail('Failed to generate message');
+    console.error(chalk.red(e.message));
+    process.exit(1);
+  }
 
   console.log(chalk.green('\nSuggested commit message:'));
   console.log(`> ${suggested}\n`);
