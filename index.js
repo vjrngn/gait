@@ -11,7 +11,7 @@ import ora from 'ora';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 
-import { checkGit, hasStagedChanges, getDiff, getStagedFiles, commit } from './lib/git.js';
+import { checkGit, hasStagedChanges, getDiff, getStagedFiles, commit, getAllChangedFiles, stageFiles } from './lib/git.js';
 import { loadConfig, saveConfig, CONFIG_FILE, getModelString } from './lib/config.js';
 import { generateCommitMessage as generateOllama, listModels } from './lib/ollama.js';
 import { generateWithAIProvider } from './lib/ai.js';
@@ -26,6 +26,7 @@ ${chalk.cyan('gait')} - AI-powered Git commit messages
 ${chalk.yellow('Usage:')}
   gait                    Run with staged changes
   gait init               Initialize/setup
+  gait -f, --files       Interactive file selection (staged + unstaged)
   gait -m <model>        Specify model (provider/model format)
   gait -M <model>        Set default model
   gait -n                Dry-run (preview only)
@@ -47,7 +48,7 @@ ${chalk.yellow('Model Format:')}
   /* Parse CLI flags */
   const argv = minimist(process.argv.slice(2), {
     string: ['m', 'model', 'list-models', 'l', 'set-model'],
-    boolean: ['dry-run', 'n', 'debug', 'd', 'staged', 's', 'help', 'h', 'init', 'i'],
+    boolean: ['dry-run', 'n', 'debug', 'd', 'staged', 's', 'help', 'h', 'init', 'i', 'interactive', 'f'],
     alias: { 
       m: 'model',
       'dry-run': 'n',
@@ -56,11 +57,14 @@ ${chalk.yellow('Model Format:')}
       'list-models': 'l',
       'set-model': 'M',
       help: 'h',
-      init: 'i'
+      init: 'i',
+      interactive: 'f',
+      files: 'f'
     }
   });
 
   const init = argv.init || argv.i;
+  const interactiveSelect = argv.interactive || argv.files || argv.f;
   const dryRun = argv['dry-run'] || argv.n;
   const debug = argv.debug || argv.d;
   const showStaged = argv.staged || argv.s;
@@ -89,11 +93,56 @@ ${chalk.yellow('Model Format:')}
     process.exit(1);
   }
 
-  /* Check for staged changes */
-  if (!hasStagedChanges()) {
+  /* Check for staged changes (unless in interactive mode) */
+  if (!interactiveSelect && !hasStagedChanges()) {
     console.log(chalk.yellow('No staged changes. Nothing to commit.\n'));
     showHelp();
     process.exit(0);
+  }
+
+  /* Interactive file selection */
+  if (interactiveSelect) {
+    const allFiles = getAllChangedFiles();
+    
+    if (allFiles.length === 0) {
+      console.log(chalk.yellow('No changed files found.\n'));
+      process.exit(0);
+    }
+
+    // Build choices for inquirer checkbox
+    const choices = allFiles.map(f => ({
+      name: `${f.path}`,
+      value: f.path,
+      checked: f.status === 'staged' // Pre-check already staged files
+    }));
+
+    const { selectedFiles } = await inquirer.prompt([
+      {
+        type: 'checkbox',
+        name: 'selectedFiles',
+        message: 'Select files to include in commit:',
+        choices: choices,
+        pageSize: 999
+      }
+    ]);
+
+    if (selectedFiles.length === 0) {
+      console.log(chalk.yellow('No files selected. Aborting.\n'));
+      process.exit(0);
+    }
+
+    // Stage any newly selected files that were previously unstaged
+    const filesToStage = selectedFiles.filter(path => {
+      const file = allFiles.find(f => f.path === path);
+      return file && file.status === 'unstaged';
+    });
+
+    if (filesToStage.length > 0) {
+      console.log(chalk.cyan(`\n📦 Staging ${filesToStage.length} file(s)...`));
+      stageFiles(filesToStage);
+    }
+
+    console.log(chalk.green(`\n✅ Selected ${selectedFiles.length} file(s) for commit\n`));
   }
 
   /* Load config */
