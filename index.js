@@ -38,6 +38,12 @@ if (staged.status !== 0) {
   process.exit(0);
 }
 
+/* Grab the staged files summary */
+const stagedFiles = sh('git diff --cached --name-status');
+console.log(chalk.cyan('\n📁 Staged files:'));
+console.log(chalk.gray(stagedFiles.split('\n').map(f => '  ' + f).join('\n')));
+console.log('');
+
 /* Grab the diff */
 const diff = sh('git diff --cached');
 
