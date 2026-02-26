@@ -68,20 +68,38 @@ if (debug) {
   console.log('');
 }
 
-/* Build prompt - with type detection */
+/* Build prompt - with type detection and body */
 const prompt = `Analyze the following git diff and create a conventional commit message.
 
 Instructions:
 1. Determine the commit type: feat, fix, docs, style, refactor, test, chore, perf, ci, or build
 2. If possible, detect a relevant scope (e.g., filename, component, or module name)
 3. Write a concise subject (under 50 characters)
+4. Add a body with bullet points (each line max 120 characters)
+5. Add a footer for issue references (e.g., "Closes #123", "Refs #456")
 
-Format: type(scope): subject
+Format:
+type(scope): subject
+
+- Bullet point 1 (max 120 chars per line)
+- Bullet point 2 (max 120 chars per line)
+
+Footer: Closes #123
 
 Examples:
 - feat(auth): add OAuth login
+
+- Added Google OAuth 2.0 support with PKCE flow
+- Token refresh handled automatically with secure storage
+
+Closes #45
+
 - fix(api): handle null response
-- docs(readme): update installation
+
+- Added null check for API response data
+- Returns empty array when no results found
+
+Refs #78
 
 Diff:\n${diff}`;
 
@@ -98,8 +116,9 @@ async function generateMessage() {
     );
     spinner.succeed('Done');
     const raw = res.data.response?.trim() ?? '';
-    const cleaned = raw.split('\n').filter(l => l.trim()).shift() ?? '';
-    return cleaned;
+    // Keep full multi-line message (subject + body + footer)
+    const lines = raw.split('\n').filter(l => l.trim());
+    return lines.join('\n');
   } catch (_) {
     // Fallback to CLI
     const cli = spawnSync('ollama', ['run', model], {
@@ -115,8 +134,9 @@ async function generateMessage() {
     }
     spinner.succeed('Done');
     const raw = cli.stdout.trim();
-    const cleaned = raw.split('\n').filter(l => l.trim()).shift() ?? '';
-    return cleaned;
+    // Keep full multi-line message (subject + body + footer)
+    const lines = raw.split('\n').filter(l => l.trim());
+    return lines.join('\n');
   }
 }
 
@@ -151,10 +171,19 @@ async function generateMessage() {
     process.exit(0);
   }
 
-  // Commit
+  // Commit - handle multi-line messages properly
   try {
-    sh(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`);
-    console.log(chalk.blue(`\n✅ Committed with message: ${commitMsg}`));
+    if (commitMsg.includes('\n')) {
+      // Multi-line: use separate subject and body with -m flags
+      const lines = commitMsg.split('\n');
+      const subject = lines[0];
+      const body = lines.slice(1).join('\n');
+      sh(`git commit -m "${subject.replace(/"/g, '\\"')}" -m "${body.replace(/"/g, '\\"')}"`);
+    } else {
+      // Single line
+      sh(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`);
+    }
+    console.log(chalk.blue(`\n✅ Committed with message:\n${commitMsg}`));
   } catch (e) {
     console.error(chalk.red('\n❌ Commit failed'), e.message);
     process.exit(1);
