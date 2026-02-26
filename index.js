@@ -15,6 +15,7 @@ import { checkGit, hasStagedChanges, getDiff, getStagedFiles, commit } from './l
 import { loadConfig, saveConfig, CONFIG_FILE, DEFAULT_MODEL } from './lib/config.js';
 import { generateCommitMessage, listModels } from './lib/ollama.js';
 import { buildPrompt } from './lib/prompt.js';
+import { runOnboarding, needsOnboarding } from './lib/init.js';
 
 /* Show help text */
 function showHelp() {
@@ -23,6 +24,7 @@ ${chalk.cyan('gait')} - AI-powered Git commit messages
 
 ${chalk.yellow('Usage:')}
   gait                    Run with staged changes
+  gait init               Initialize/setup
   gait -m <model>         Specify Ollama model
   gait -M <model>         Set default model
   gait -n                 Dry-run (preview only)
@@ -41,7 +43,7 @@ ${chalk.yellow('Config:')}
   /* Parse CLI flags */
   const argv = minimist(process.argv.slice(2), {
     string: ['m', 'model', 'list-models', 'l', 'set-model'],
-    boolean: ['dry-run', 'n', 'debug', 'd', 'staged', 's', 'help', 'h'],
+    boolean: ['dry-run', 'n', 'debug', 'd', 'staged', 's', 'help', 'h', 'init', 'i'],
     alias: { 
       m: 'model',
       'dry-run': 'n',
@@ -49,10 +51,12 @@ ${chalk.yellow('Config:')}
       staged: 's',
       'list-models': 'l',
       'set-model': 'M',
-      help: 'h'
+      help: 'h',
+      init: 'i'
     }
   });
 
+  const init = argv.init || argv.i;
   const dryRun = argv['dry-run'] || argv.n;
   const debug = argv.debug || argv.d;
   const showStaged = argv.staged || argv.s;
@@ -63,6 +67,14 @@ ${chalk.yellow('Config:')}
   if (argv.help || argv.h) {
     showHelp();
     process.exit(0);
+  }
+
+  /* Run onboarding if needed */
+  if (init || needsOnboarding()) {
+    await runOnboarding();
+    if (init) {
+      process.exit(0);
+    }
   }
 
   /* Validate git environment */
