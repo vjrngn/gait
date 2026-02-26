@@ -1,6 +1,6 @@
 {
-  "name": "gait",
-  "version": "1.0.0",
+  "name": "@vjrngn/gait",
+  "version": "0.0.0",
   "description": "Git Commit with AI – uses Ollama",
   "type": "module",
   "bin": {
@@ -8,6 +8,14 @@
   },
   "author": "OpenClaw",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vjrngn/gait.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vjrngn/gait/issues"
+  },
+  "homepage": "https://github.com/vjrngn/gait#readme",
   "dependencies": {
     "ai": "^6.0.101",
     "axios": "^1.7.2",
@@ -20,7 +28,13 @@
     "jest": "^29.7.0"
   },
   "scripts": {
-    "test": "jest"
+    "test": "jest",
+    "prepublishOnly": "npm test",
+    "publish": "npm publish --access public",
+    "postpublish": "echo 'Published successfully!'",
+    "release": "npm version patch && npm run publish",
+    "release:minor": "npm version minor && npm run publish",
+    "release:major": "npm version major && npm run publish"
   },
   "engines": {
     "node": ">=18"
