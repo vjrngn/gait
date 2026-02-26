@@ -12,8 +12,35 @@ import ora from 'ora';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
 import minimist from 'minimist';
+import fs from 'fs';
 
 const DEFAULT_MODEL = 'gpt-oss:20b';
+const CONFIG_DIR = process.env.HOME + '/.gait';
+const CONFIG_FILE = CONFIG_DIR + '/gait.json';
+
+/** Helper – load config from file */
+function loadConfig() {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    }
+  } catch (e) {
+    // Ignore errors, use defaults
+  }
+  return { model: DEFAULT_MODEL };
+}
+
+/** Helper – save config to file */
+function saveConfig(config) {
+  try {
+    if (!fs.existsSync(CONFIG_DIR)) {
+      fs.mkdirSync(CONFIG_DIR, { recursive: true });
+    }
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  } catch (e) {
+    console.error(chalk.yellow('⚠ Failed to save config'), e.message);
+  }
+}
 
 /** Helper – shell command with error handling */
 function sh(cmd) {
@@ -34,25 +61,105 @@ const staged = spawnSync('git', ['diff', '--cached', '--quiet']);
 if (staged.status !== 0) {
   /* changes exist – proceed */
 } else {
-  console.log(chalk.yellow('No staged changes. Nothing to commit.'));
+  // Show help when no staged changes
+  console.log(chalk.yellow('No staged changes. Nothing to commit.\n'));
+  console.log(`
+${chalk.cyan('gait')} - AI-powered Git commit messages
+
+${chalk.yellow('Usage:')}
+  gait                    Run with staged changes
+  gait -m <model>         Specify Ollama model
+  gait -M <model>        Set default model
+  gait -n                 Dry-run (preview only)
+  gait -s                 Show staged files
+  gait -l                 List available models
+  gait -d                 Debug mode
+  gait -h, --help         Show this help
+
+${chalk.yellow('Config:')}
+  Model stored in: ~/.gait/gait.json
+  `);
   process.exit(0);
 }
 
 /* Parse CLI flags - must come early */
 const argv = minimist(process.argv.slice(2), {
-  string: ['m', 'model'],
-  boolean: ['dry-run', 'n', 'debug', 'd', 'staged', 's'],
+  string: ['m', 'model', 'list-models', 'l', 'set-model'],
+  boolean: ['dry-run', 'n', 'debug', 'd', 'staged', 's', 'help', 'h'],
   alias: { 
     m: 'model',
     'dry-run': 'n',
     'debug': 'd',
-    'staged': 's'
+    'staged': 's',
+    'list-models': 'l',
+    'set-model': 'M',
+    'help': 'h'
   }
 });
-const model = argv.model || DEFAULT_MODEL;
+
+/* Show help */
+if (argv.help || argv.h) {
+  console.log(`
+${chalk.cyan('gait')} - AI-powered Git commit messages
+
+${chalk.yellow('Usage:')}
+  gait                    Run with staged changes
+  gait -m <model>         Specify Ollama model
+  gait -M <model>        Set default model
+  gait -n                 Dry-run (preview only)
+  gait -s                 Show staged files
+  gait -l                 List available models
+  gait -d                 Debug mode
+  gait -h, --help         Show this help
+
+${chalk.yellow('Config:')}
+  Model stored in: ~/.gait/gait.json
+  
+${chalk.yellow('Examples:')}
+  gait                           # Normal usage
+  gait -m llama3                 # Use specific model
+  gait -M llama3                 # Set default model
+  gait -n                        # Preview commit
+  gait -s                        # Show staged files
+  `);
+  process.exit(0);
+}
+
+/* Load config */
+const config = loadConfig();
 const dryRun = argv['dry-run'] || argv.n || false;
 const debug = argv.debug || argv.d || false;
 const showStaged = argv.staged || argv.s || false;
+const listModels = argv['list-models'] || argv.l || false;
+const setModel = argv['set-model'] || argv.M || false;
+
+/* Set default model */
+if (setModel) {
+  config.model = setModel;
+  saveConfig(config);
+  console.log(chalk.green(`✅ Default model set to: ${setModel}`));
+  console.log(chalk.gray(`   Saved to ${CONFIG_FILE}`));
+  process.exit(0);
+}
+
+/* List available models */
+if (listModels) {
+  console.log(chalk.cyan('\n📋 Available Ollama models:'));
+  try {
+    const models = sh('ollama list');
+    console.log(chalk.gray(models));
+    process.exit(0);
+  } catch (e) {
+    console.error(chalk.red('Failed to list models'), e.message);
+    process.exit(1);
+  }
+}
+
+/* Determine model to use: CLI arg > config > default */
+const model = argv.model || config.model || DEFAULT_MODEL;
+if (debug) {
+  console.log(chalk.gray(`   Using model: ${model} (config: ${config.model || 'default'})`));
+}
 
 /* Grab the diff */
 const diff = sh('git diff --cached');
