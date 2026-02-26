@@ -38,28 +38,32 @@ if (staged.status !== 0) {
   process.exit(0);
 }
 
-/* Grab the staged files summary */
-const stagedFiles = sh('git diff --cached --name-status');
-console.log(chalk.cyan('\n📁 Staged files:'));
-console.log(chalk.gray(stagedFiles.split('\n').map(f => '  ' + f).join('\n')));
-console.log('');
-
-/* Grab the diff */
-const diff = sh('git diff --cached');
-
-/* Parse CLI flags */
+/* Parse CLI flags - must come early */
 const argv = minimist(process.argv.slice(2), {
   string: ['m', 'model'],
-  boolean: ['dry-run', 'n', 'debug', 'd'],
+  boolean: ['dry-run', 'n', 'debug', 'd', 'staged', 's'],
   alias: { 
     m: 'model',
     'dry-run': 'n',
-    'debug': 'd'
+    'debug': 'd',
+    'staged': 's'
   }
 });
 const model = argv.model || DEFAULT_MODEL;
 const dryRun = argv['dry-run'] || argv.n || false;
 const debug = argv.debug || argv.d || false;
+const showStaged = argv.staged || argv.s || false;
+
+/* Grab the diff */
+const diff = sh('git diff --cached');
+
+/* Show staged files only if --staged or -s flag is passed */
+if (showStaged) {
+  const stagedFiles = sh('git diff --cached --name-status');
+  console.log(chalk.cyan('\n📁 Staged files:'));
+  console.log(chalk.gray(stagedFiles.split('\n').map(f => '  ' + f).join('\n')));
+  console.log('');
+}
 
 /* Debug mode - show all flags */
 if (debug) {
