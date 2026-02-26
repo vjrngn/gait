@@ -1,0 +1,28 @@
+# Git
+.git/
+.gitignore
+
+# Dependencies
+node_modules/
+
+# Tests
+__tests__/
+*.test.js
+*.spec.js
+coverage/
+
+# Development
+.env
+.env.*
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# pnpm specific
+pnpm-debug.log*

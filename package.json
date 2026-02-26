@@ -1,11 +1,25 @@
 {
   "name": "@vjrngn/gait",
-  "version": "0.0.0",
-  "description": "Git Commit with AI – uses Ollama",
+  "version": "1.0.0",
+  "description": "Git Commit with AI",
   "type": "module",
+  "main": "index.js",
   "bin": {
     "gait": "./bin/gait"
   },
+  "files": [
+    "bin/",
+    "lib/",
+    "index.js"
+  ],
+  "keywords": [
+    "git",
+    "ai",
+    "commit",
+    "ollama",
+    "gpt",
+    "ai-commit"
+  ],
   "author": "OpenClaw",
   "license": "MIT",
   "repository": {
@@ -16,6 +30,10 @@
     "url": "https://github.com/vjrngn/gait/issues"
   },
   "homepage": "https://github.com/vjrngn/gait#readme",
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/vjrngn/gait"
+  },
   "dependencies": {
     "ai": "^6.0.101",
     "axios": "^1.7.2",
@@ -32,9 +50,11 @@
     "prepublishOnly": "npm test",
     "publish": "npm publish --access public",
     "postpublish": "echo 'Published successfully!'",
-    "release": "npm version patch && npm run publish",
-    "release:minor": "npm version minor && npm run publish",
-    "release:major": "npm version major && npm run publish"
+    "version": "npm version",
+    "release": "npm version patch",
+    "release:minor": "npm version minor",
+    "release:major": "npm version major",
+    "publish:latest": "npm run version && npm run publish"
   },
   "engines": {
     "node": ">=18"
