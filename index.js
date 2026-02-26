@@ -25,6 +25,7 @@ ${chalk.cyan('gait')} - AI-powered Git commit messages
 
 ${chalk.yellow('Usage:')}
   gait                    Run with staged changes
+  gait commit             Explicit commit command (same as gait)
   gait init               Initialize/setup
   gait -f, --files       Interactive file selection (staged + unstaged)
   gait -m <model>        Specify model (provider/model format)
@@ -45,8 +46,173 @@ ${chalk.yellow('Model Format:')}
 
 /* Main flow */
 (async () => {
+  /* Get raw args to check for subcommands */
+  const rawArgs = process.argv.slice(2);
+  const subcommand = rawArgs[0];
+  
+  /* Handle subcommands */
+  if (subcommand === 'commit') {
+    // Explicit commit command - run commit flow directly
+    const commitArgs = minimist(rawArgs.slice(1), {
+      string: ['m', 'model'],
+      boolean: ['dry-run', 'n', 'debug', 'd', 'help', 'h', 'interactive', 'f'],
+      alias: { 
+        m: 'model',
+        'dry-run': 'n',
+        debug: 'd',
+        help: 'h',
+        interactive: 'f',
+        files: 'f'
+      }
+    });
+    
+    if (commitArgs.help || commitArgs.h) {
+      console.log(`
+${chalk.cyan('gait commit')} - Explicit commit command
+
+${chalk.yellow('Usage:')}
+  gait commit                 Commit with staged changes
+  gait commit -f             Interactive file selection
+  gait commit -n             Dry-run (preview only)
+  gait commit -m <model>    Specify model
+
+${chalk.yellow('Flags:')}
+  -f, --files       Interactive file selection (staged + unstaged)
+  -n, --dry-run    Preview only, don't commit
+  -d, --debug      Show debug info
+  -m, --model      Specify AI model
+      `);
+      process.exit(0);
+    }
+    
+    // Handle interactive file selection for commit subcommand
+    const interactiveSelect = commitArgs.interactive || commitArgs.files || commitArgs.f;
+    
+    if (interactiveSelect) {
+      const allFiles = getAllChangedFiles();
+      
+      if (allFiles.length === 0) {
+        console.log(chalk.yellow('No changed files found.\n'));
+        process.exit(0);
+      }
+
+      const choices = allFiles.map(f => ({
+        name: `${f.path}`,
+        value: f.path,
+        checked: f.status === 'staged'
+      }));
+
+      const { selectedFiles } = await inquirer.prompt([
+        {
+          type: 'checkbox',
+          name: 'selectedFiles',
+          message: 'Select files to include in commit:',
+          choices: choices,
+          pageSize: 999
+        }
+      ]);
+
+      if (selectedFiles.length === 0) {
+        console.log(chalk.yellow('No files selected. Aborting.\n'));
+        process.exit(0);
+      }
+
+      const filesToStage = selectedFiles.filter(path => {
+        const file = allFiles.find(f => f.path === path);
+        return file && file.status === 'unstaged';
+      });
+
+      if (filesToStage.length > 0) {
+        console.log(chalk.cyan(`\n📦 Staging ${filesToStage.length} file(s)...`));
+        stageFiles(filesToStage);
+      }
+
+      console.log(chalk.green(`\n✅ Selected ${selectedFiles.length} file(s) for commit\n`));
+    }
+    
+    // Continue with commit flow - no need to check for staged changes
+    const config = loadConfig();
+    const dryRun = commitArgs['dry-run'] || commitArgs.n;
+    const debug = commitArgs.debug || commitArgs.d;
+    const modelArg = commitArgs.model || commitArgs.m;
+    
+    // Handle model override
+    if (modelArg) {
+      const [provider, model] = modelArg.split('/');
+      if (!provider || !model) {
+        console.error(chalk.red('✖ Model must be in provider/model format (e.g., ollama/llama3)'));
+        process.exit(1);
+      }
+      config.activeProvider = provider;
+      if (!config.providers) config.providers = {};
+      config.providers[provider] = { model };
+    }
+    
+    const provider = config.activeProvider || 'ollama';
+    const providerConfig = config.providers?.[provider] || { model: 'llama3' };
+    
+    if (debug) {
+      console.log(chalk.gray('\n🔧 Debug mode:'));
+      console.log(chalk.gray(`   Provider: ${provider}`));
+      console.log(chalk.gray(`   Model: ${providerConfig.model}`));
+    }
+
+    const diff = getDiff();
+    const prompt = buildPrompt(diff);
+    
+    const spinner = ora('Generating commit message…').start();
+    
+    let suggested;
+    try {
+      if (provider === 'ollama') {
+        suggested = await generateOllama(providerConfig.model, prompt);
+      } else {
+        suggested = await generateWithAIProvider(provider, providerConfig.model, prompt);
+      }
+      spinner.succeed('Done');
+    } catch (e) {
+      spinner.fail('Failed to generate message');
+      console.error(chalk.red(e.message));
+      process.exit(1);
+    }
+
+    console.log(chalk.green('\nSuggested commit message:'));
+    console.log(`> ${suggested}\n`);
+
+    let commitMsg = suggested;
+
+    if (!dryRun) {
+      const { finalMsg } = await inquirer.prompt([
+        {
+          type: 'input',
+          name: 'finalMsg',
+          message: 'Edit commit message (leave empty to accept):',
+          default: suggested
+        }
+      ]);
+      commitMsg = finalMsg.trim() || suggested;
+    }
+
+    if (dryRun) {
+      console.log(chalk.cyan('\n🔍 Dry-run mode - no commit was made\n'));
+      console.log(chalk.yellow('Would commit with message:'));
+      console.log(`> ${commitMsg}\n`);
+      process.exit(0);
+    }
+
+    try {
+      commit(commitMsg);
+      console.log(chalk.blue(`\n✅ Committed with message:\n${commitMsg}`));
+    } catch (e) {
+      console.error(chalk.red('\n❌ Commit failed'), e.message);
+      process.exit(1);
+    }
+    
+    process.exit(0);
+  }
+
   /* Parse CLI flags */
-  const argv = minimist(process.argv.slice(2), {
+  const argv = minimist(rawArgs, {
     string: ['m', 'model', 'list-models', 'l', 'set-model'],
     boolean: ['dry-run', 'n', 'debug', 'd', 'staged', 's', 'help', 'h', 'init', 'i', 'interactive', 'f'],
     alias: { 
